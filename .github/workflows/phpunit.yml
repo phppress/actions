@@ -1,0 +1,111 @@
+name: phpunit
+
+on:
+  workflow_call:
+    inputs:
+      composer-command:
+        description: Composer command to run.
+        default: composer update --prefer-dist --no-interaction --no-progress --optimize-autoloader --ansi
+        required: false
+        type: string
+      coverage:
+        description: Generate code coverage report.
+        default: pcov
+        required: false
+        type: string
+      exclude-group:
+        description: Exclude group from phpunit.
+        default:
+        required: false
+        type: string
+      extensions:
+        description: List of extensions to PHP.
+        default:
+        required: false
+        type: string
+      group:
+        description: Run only tests from the specified group(s).
+        default:
+        required: false
+        type: string
+      ini-values:
+        description: Initial values for PHP configuration.
+        default: date.timezone='UTC'
+        required: false
+        type: string
+      name:
+        description: Name of the job.
+        default: PHP
+        required: true
+        type: string
+      os:
+        description: Os to test, separated by comma.
+        required: true
+        type: string
+      php:
+        description: PHP versions to test, separated by comma.
+        required: true
+        type: string
+      tools:
+        description: Tools to test, separated by comma.
+        default: composer:v2
+        required: false
+        type: string
+
+    secrets:
+      CODECOV_TOKEN:
+        description: Codecov token.
+        required: false
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phpunit:
+    name: ${{ inputs.name }}-${{ matrix.php }}-${{ matrix.os }}
+
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.os) }}
+        php: ${{ fromJson(inputs.php) }}
+
+    steps:
+      - name: Checkout.
+        uses: actions/checkout@v4
+
+      - name: Install PHP.
+        uses: shivammathur/setup-php@develop
+        with:
+          coverage: ${{ inputs.coverage }}
+          extensions: ${{ inputs.extensions}}
+          ini-values: ${{ inputs.ini-values }}
+          php-version: ${{ matrix.php }}
+          tools: ${{ inputs.tools }}
+
+      - name: Install dependencies with composer.
+        run: ${{ inputs.composer-command }}
+
+      - name: Run PHPUnit with coverage.
+        run: |
+          CMD="vendor/bin/phpunit --coverage-clover=coverage.xml --colors=always"
+
+          if [ -n "${{ inputs.group }}" ]; then
+            CMD="$CMD --group ${{ inputs.group }}"
+          fi
+
+          if [ -n "${{ inputs.exclude-group }}" ]; then
+            CMD="$CMD --exclude-group ${{ inputs.exclude-group }}"
+          fi
+
+          $CMD
+
+      - name: Upload coverage to Codecov.
+        if: matrix.php == '8.1'
+        uses: codecov/codecov-action@v4
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.xml

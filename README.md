@@ -2,7 +2,7 @@
     <a href="https://github.com/phppress/actions" target="_blank">
         <img src="https://avatars.githubusercontent.com/u/188348450?v=4" height="100px">
     </a>
-    <h1 align="center">PHPForge - actions reusable</h1>
+    <h1 align="center">Reusable CI workflows.</h1>
     <br>
 </p>
 

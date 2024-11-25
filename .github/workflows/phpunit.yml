@@ -90,6 +90,7 @@ jobs:
         run: ${{ inputs.composer-command }}
 
       - name: Run PHPUnit with coverage.
+        shell: bash
         run: |
           CMD="vendor/bin/phpunit --coverage-clover=coverage.xml --colors=always --log-junit junit.xml"
 

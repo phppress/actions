@@ -90,9 +90,8 @@ jobs:
         run: ${{ inputs.composer-command }}
 
       - name: Run PHPUnit with coverage.
-        shell: bash
         run: |
-          CMD="vendor/bin/phpunit --coverage-clover=coverage.xml --colors=always"
+          CMD="vendor/bin/phpunit --coverage-clover=coverage.xml --colors=always --log-junit junit.xml"
 
           if [ -n "${{ inputs.group }}" ]; then
             CMD="$CMD --group ${{ inputs.group }}"
@@ -104,9 +103,8 @@ jobs:
 
           $CMD
 
-      - name: Upload coverage to Codecov.
-        if: matrix.php == '8.1'
-        uses: codecov/codecov-action@v4
+      - name: Upload test results to Codecov
+        if: ${{ !cancelled() }}
+        uses: codecov/test-results-action@v1
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
-          file: ./coverage.xml

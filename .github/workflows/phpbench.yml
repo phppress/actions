@@ -64,6 +64,17 @@ jobs:
         php: ${{ fromJson(inputs.php) }}
 
     steps:
+      - name: Check if baseline exists.
+        id: baseline_check
+        run: |
+          if [ -d "./default/.phpbench" ]; then
+            echo "Baseline exists, proceeding with comparison."
+            echo "baseline=1" >> $GITHUB_ENV
+          else
+            echo "No baseline found, skipping comparison."
+            echo "baseline=0" >> $GITHUB_ENV
+          fi
+
       - name: Install PHP with extensions
         uses: shivammathur/setup-php@v2
         with:

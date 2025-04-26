@@ -1,0 +1,185 @@
+name: phpbench
+
+on:
+  workflow_call:
+    inputs:
+      baseline-assertion:
+        description: Baseline assertion function
+        default: mode(variant.time.avg) <= mode(baseline.time.avg) +/- 5%
+        required: false
+        type: string
+      composer-command:
+        description: Composer command to run.
+        default: composer update --prefer-dist --no-interaction --no-progress --optimize-autoloader --ansi
+        required: false
+        type: string
+      config-file:
+        description: Config file name.
+        default: phpbench.json
+        required: false
+        type: string
+      coverage:
+        description: Generate code coverage report.
+        default: pcov
+        required: false
+        type: string
+      extensions:
+        description: List of extensions to PHP.
+        default: ""
+        required: false
+        type: string
+      ini-values:
+        description: Initial values for PHP configuration.
+        default: date.timezone='UTC'
+        required: false
+        type: string
+      os:
+        description: Os to test, separated by comma.
+        required: true
+        type: string
+      php:
+        description: PHP versions to test, separated by comma.
+        required: true
+        type: string
+      tools:
+        description: Tools to test, separated by comma.
+        default:
+        required: false
+        type: string
+      report:
+        description: Report name.
+        default: aggregate
+        required: false
+        type: string
+
+jobs:
+  phpbench:
+    name: PHP ${{ matrix.php }}-${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJson(inputs.os) }}
+        php: ${{ fromJson(inputs.php) }}
+
+    steps:
+      - name: Install PHP with extensions
+        uses: shivammathur/setup-php@v2
+        with:
+          coverage: ${{ inputs.coverage }}
+          extensions: ${{ inputs.extensions }}
+          ini-values: ${{ inputs.ini-values }}
+          php-version: ${{ matrix.php }}
+          tools: ${{ inputs.tools }}
+
+      - name: Checkout current branch
+        uses: actions/checkout@v4
+        with:
+          path: ./current
+
+      - name: Determine composer cache directory
+        working-directory: ./current
+        run: echo "COMPOSER_CACHE_DIR=$(composer config cache-dir)" >> $GITHUB_ENV
+
+      - name: Cache composer dependencies
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.COMPOSER_CACHE_DIR }}
+          key: php${{ matrix.php }}-composer-${{ hashFiles('composer.json') }}
+          restore-keys: |
+            php${{ matrix.php }}-composer-
+
+      - name: Update composer
+        run: composer self-update
+
+      - name: Install dependencies
+        run: ${{ inputs.composer-command }}
+        working-directory: ./current
+
+      - name: Check if we need to create a baseline
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" && "${{ github.ref }}" != "refs/heads/${{ github.event.repository.default_branch }}" ]]; then
+            echo "WITH_BENCH_BASELINE=1" >> $GITHUB_ENV
+          else
+            echo "WITH_BENCH_BASELINE=0" >> $GITHUB_ENV
+          fi
+
+      - name: Baseline Checkout default branch
+        if: ${{ env.WITH_BENCH_BASELINE == '1' }}
+        uses: actions/checkout@v4
+        with:
+          path: ./default
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Check if baseline exists.
+        id: baseline_check
+        run: |
+          if [ -d "./default/.phpbench" ]; then
+            echo "Baseline exists, proceeding with comparison."
+            echo "baseline=1" >> $GITHUB_ENV
+          else
+            echo "No baseline found, skipping comparison."
+            echo "baseline=0" >> $GITHUB_ENV
+          fi
+
+      - name: Baseline Install dependencies
+        if: ${{ env.WITH_BENCH_BASELINE == '1' }}
+        run: ${{ inputs.composer-command }}
+        working-directory: ./default
+
+      - name: Baseline Run PhpBench
+        if: ${{ env.WITH_BENCH_BASELINE == '1' }}
+        run: vendor/bin/phpbench run --report='${{ inputs.report }}' --config=${{ inputs.config-file }} --tag=default
+        working-directory: ./default
+
+      - name: Copy PhpBench baseline
+        if: ${{ env.WITH_BENCH_BASELINE == '1' }}
+        run: cp -r default/.phpbench current/
+
+      - name: Run PhpBench
+        if: ${{ env.baseline == '0' }}
+        working-directory: ./current
+        run: |
+          if [ "${{ env.WITH_BENCH_BASELINE }}" == "1" ]; then
+            vendor/bin/phpbench run --report='${{ inputs.report }}' --config=${{ inputs.config-file }} --ref=default --assert="${{ inputs.baseline-assertion }}" > phpbench.log
+          else
+            vendor/bin/phpbench run --report='${{ inputs.report }}' --config=${{ inputs.config-file }} > phpbench.log
+          fi
+
+      - name: Convert DOT to PNG
+        if: matrix.os == 'ubuntu-latest'
+        working-directory: ./current
+        run: |
+          sudo apt-get update
+          sudo apt-get install graphviz -y
+          if [ -f phpbench.dot ]; then
+            dot -Tpng phpbench.dot -o phpbench.png
+          fi
+
+      - name: Upload PhpBench artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: phpbench-artifacts-${{ matrix.php }}-${{ matrix.os }}
+          path: |
+            current/phpbench.log
+            current/phpbench.html
+            current/phpbench.dot
+            current/phpbench.png
+          if-no-files-found: ignore
+
+      - name: Show PhpBench summary
+        run: |
+          echo "## 📈 PhpBench Benchmark Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**PHP version**: ${{ matrix.php }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Operating System**: ${{ matrix.os }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "✅ Benchmarks executed successfully." >> $GITHUB_STEP_SUMMARY
+          echo "📦 Generated artifacts:" >> $GITHUB_STEP_SUMMARY
+          echo "- phpbench.log" >> $GITHUB_STEP_SUMMARY
+          echo "- phpbench.html" >> $GITHUB_STEP_SUMMARY
+          echo "- phpbench.dot" >> $GITHUB_STEP_SUMMARY
+          echo "- phpbench.png" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⬇️ You can download all artifacts in the *Artifacts* section of this workflow run." >> $GITHUB_STEP_SUMMARY

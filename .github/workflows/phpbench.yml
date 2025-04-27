@@ -147,16 +147,6 @@ jobs:
             vendor/bin/phpbench run --report='${{ inputs.report }}' --config=${{ inputs.config-file }} > phpbench.log
           fi
 
-      - name: Convert DOT to PNG
-        if: matrix.os == 'ubuntu-latest'
-        working-directory: ./current
-        run: |
-          sudo apt-get update
-          sudo apt-get install graphviz -y
-          if [ -f phpbench.dot ]; then
-            dot -Tpng phpbench.dot -o phpbench.png
-          fi
-
       - name: Upload PhpBench artifacts
         uses: actions/upload-artifact@v4
         with:
